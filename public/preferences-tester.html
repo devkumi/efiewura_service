@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preferences API Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .button { padding: 10px 15px; margin: 5px; background: #007cba; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .button:hover { background: #005a87; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 3px; font-family: monospace; white-space: pre-wrap; }
+        .success { border-left: 5px solid #28a745; }
+        .error { border-left: 5px solid #dc3545; }
+        input, select, textarea { margin: 5px; padding: 8px; border: 1px solid #ddd; border-radius: 3px; }
+        label { display: block; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🧪 User Preferences API Tester</h1>
+    <p>Test the working preferences backend endpoints</p>
+
+    <!-- Login Section -->
+    <div class="section">
+        <h3>🔐 Login</h3>
+        <input type="email" id="email" placeholder="Email" value="preferences.test@test.com">
+        <input type="password" id="password" placeholder="Password" value="password123">
+        <button class="button" onclick="login()">Login</button>
+        <div id="loginResult" class="result"></div>
+    </div>
+
+    <!-- Profile Section -->
+    <div class="section">
+        <h3>👤 Get Profile</h3>
+        <button class="button" onclick="getProfile()">Load Profile</button>
+        <div id="profileResult" class="result"></div>
+    </div>
+
+    <!-- Update Basic Info -->
+    <div class="section">
+        <h3>✏️ Update Basic Profile</h3>
+        <input type="text" id="firstname" placeholder="First Name" value="John">
+        <input type="text" id="lastname" placeholder="Last Name" value="Doe">
+        <textarea id="bio" placeholder="Bio" rows="3">Updated bio from frontend test</textarea>
+        <button class="button" onclick="updateBasicProfile()">Update Basic Info</button>
+        <div id="basicUpdateResult" class="result"></div>
+    </div>
+
+    <!-- Update Display Preferences -->
+    <div class="section">
+        <h3>🎨 Update Display Preferences</h3>
+        <label>
+            Theme:
+            <select id="theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+            </select>
+        </label>
+        <label>
+            Timezone:
+            <select id="timezone">
+                <option value="Africa/Lagos">Lagos</option>
+                <option value="Africa/Accra">Accra</option>
+                <option value="UTC">UTC</option>
+            </select>
+        </label>
+        <label>
+            Date Format:
+            <select id="dateFormat">
+                <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+            </select>
+        </label>
+        <label>
+            Dashboard Refresh (seconds):
+            <input type="number" id="refreshInterval" min="10" max="300" value="60">
+        </label>
+        <button class="button" onclick="updateDisplayPreferences()">Update Display Preferences</button>
+        <div id="displayUpdateResult" class="result"></div>
+    </div>
+
+    <!-- Update Notification Preferences -->
+    <div class="section">
+        <h3>🔔 Update Notification Preferences</h3>
+        <label><input type="checkbox" id="emailNotif" checked> Email Notifications</label>
+        <label><input type="checkbox" id="smsNotif"> SMS Notifications</label>
+        <label><input type="checkbox" id="newBookingsNotif" checked> New Bookings</label>
+        <label><input type="checkbox" id="propertyUpdatesNotif" checked> Property Updates</label>
+        <label><input type="checkbox" id="userRegsNotif"> User Registrations</label>
+        <label><input type="checkbox" id="systemAlertsNotif" checked> System Alerts</label>
+        <label><input type="checkbox" id="weeklyReportsNotif"> Weekly Reports</label>
+        <button class="button" onclick="updateNotificationPreferences()">Update Notification Preferences</button>
+        <div id="notificationUpdateResult" class="result"></div>
+    </div>
+
+    <!-- Complete Update -->
+    <div class="section">
+        <h3>🚀 Update Everything at Once</h3>
+        <button class="button" onclick="updateEverything()">Update All Preferences</button>
+        <div id="completeUpdateResult" class="result"></div>
+    </div>
+
+    <script>
+        let authToken = '';
+        const API_BASE = '/api'; // Adjust if needed
+
+        function showResult(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.textContent = JSON.stringify(data, null, 2);
+            element.className = `result ${isError ? 'error' : 'success'}`;
+        }
+
+        async function apiCall(endpoint, method = 'GET', data = null) {
+            const options = {
+                method,
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            if (authToken) {
+                options.headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, options);
+                const result = await response.json();
+                return { success: response.ok, data: result, status: response.status };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            const result = await apiCall('/login', 'POST', { email, password });
+            
+            if (result.success && result.data.success) {
+                authToken = result.data.data.token;
+                showResult('loginResult', { message: 'Login successful!', token: '***' + authToken.slice(-10) });
+            } else {
+                showResult('loginResult', result.data || result, true);
+            }
+        }
+
+        async function getProfile() {
+            const result = await apiCall('/profile');
+            showResult('profileResult', result.data);
+        }
+
+        async function updateBasicProfile() {
+            const data = {
+                firstname: document.getElementById('firstname').value,
+                lastname: document.getElementById('lastname').value,
+                bio: document.getElementById('bio').value
+            };
+
+            const result = await apiCall('/profile', 'PUT', data);
+            showResult('basicUpdateResult', result.data);
+        }
+
+        async function updateDisplayPreferences() {
+            const data = {
+                preferences: {
+                    theme: document.getElementById('theme').value,
+                    timezone: document.getElementById('timezone').value,
+                    date_format: document.getElementById('dateFormat').value,
+                    dashboard_refresh_interval: parseInt(document.getElementById('refreshInterval').value)
+                }
+            };
+
+            const result = await apiCall('/profile', 'PUT', data);
+            showResult('displayUpdateResult', result.data);
+        }
+
+        async function updateNotificationPreferences() {
+            const data = {
+                preferences: {
+                    notifications: {
+                        email: document.getElementById('emailNotif').checked,
+                        sms: document.getElementById('smsNotif').checked,
+                        new_bookings: document.getElementById('newBookingsNotif').checked,
+                        property_updates: document.getElementById('propertyUpdatesNotif').checked,
+                        user_registrations: document.getElementById('userRegsNotif').checked,
+                        system_alerts: document.getElementById('systemAlertsNotif').checked,
+                        weekly_reports: document.getElementById('weeklyReportsNotif').checked
+                    }
+                }
+            };
+
+            const result = await apiCall('/profile', 'PUT', data);
+            showResult('notificationUpdateResult', result.data);
+        }
+
+        async function updateEverything() {
+            const data = {
+                firstname: document.getElementById('firstname').value,
+                lastname: document.getElementById('lastname').value,
+                bio: document.getElementById('bio').value,
+                preferences: {
+                    theme: document.getElementById('theme').value,
+                    timezone: document.getElementById('timezone').value,
+                    date_format: document.getElementById('dateFormat').value,
+                    dashboard_refresh_interval: parseInt(document.getElementById('refreshInterval').value),
+                    notifications: {
+                        email: document.getElementById('emailNotif').checked,
+                        sms: document.getElementById('smsNotif').checked,
+                        new_bookings: document.getElementById('newBookingsNotif').checked,
+                        property_updates: document.getElementById('propertyUpdatesNotif').checked,
+                        user_registrations: document.getElementById('userRegsNotif').checked,
+                        system_alerts: document.getElementById('systemAlertsNotif').checked,
+                        weekly_reports: document.getElementById('weeklyReportsNotif').checked
+                    }
+                }
+            };
+
+            const result = await apiCall('/profile', 'PUT', data);
+            showResult('completeUpdateResult', result.data);
+        }
+    </script>
+</body>
+</html>
