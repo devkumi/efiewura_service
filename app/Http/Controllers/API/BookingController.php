@@ -4,8 +4,10 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\Payment;
 use App\Models\Property;
 use App\Models\Notification;
+use App\Services\PaystackService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -154,6 +156,7 @@ class BookingController extends Controller
                 'user_id' => Auth::id(),
                 'landlord_id' => $property->landlord_id,
                 'status' => 'pending',
+                'payment_status' => 'unpaid',
                 'move_in_date' => $moveInDate,
                 'move_out_date' => $moveOutDate,
                 'lease_duration_months' => $request->lease_duration_months,
@@ -170,16 +173,54 @@ class BookingController extends Controller
                 'monthly_income' => $request->monthly_income,
                 'emergency_contact' => $request->emergency_contact,
             ]);
-            
-            // Create notification for landlord about new booking request
-            Notification::createNewBookingRequest($booking);
+
+            // Generate Paystack reference and create a pending payment record
+            $reference = Payment::generateReference($booking->id);
+
+            $payment = Payment::create([
+                'booking_id' => $booking->id,
+                'user_id' => Auth::id(),
+                'landlord_id' => $property->landlord_id,
+                'type' => 'booking_payment',
+                'amount' => $totalAmount,
+                'currency' => $property->currency,
+                'status' => 'pending',
+                'paystack_reference' => $reference,
+            ]);
+
+            // Initialize Paystack transaction
+            $paystackService = new PaystackService();
+            $paystackData = $paystackService->initializeTransaction([
+                'email' => $request->tenant_email,
+                'amount' => (int) round($totalAmount * 100), // convert to pesewas
+                'reference' => $reference,
+                'currency' => $property->currency,
+                'metadata' => [
+                    'booking_id' => $booking->id,
+                    'payment_id' => $payment->id,
+                    'type' => 'booking_payment',
+                    'tenant_name' => $request->tenant_name,
+                    'property_title' => $property->title,
+                ],
+            ]);
+
+            $booking->update(['payment_initiated_at' => now()]);
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Booking request submitted successfully',
-                'data' => $booking->load(['property.category', 'landlord.user'])
+                'message' => 'Booking created. Please complete payment to confirm your request.',
+                'data' => [
+                    'booking' => $booking->load(['property.category', 'landlord.user']),
+                    'payment' => [
+                        'reference' => $reference,
+                        'amount' => $totalAmount,
+                        'currency' => $property->currency,
+                        'payment_url' => $paystackData['authorization_url'],
+                        'access_code' => $paystackData['access_code'],
+                    ],
+                ],
             ], 201);
 
         } catch (\Exception $e) {

@@ -87,6 +87,21 @@ return [
             'subject' => 'Property Auto-Release Notice - {property_title}',
             'enabled' => true,
         ],
+        'payment_received' => [
+            'template' => 'emails.payment-received',
+            'subject' => 'Payment Confirmed - {currency} {amount} for {property_title}',
+            'enabled' => true,
+        ],
+        'payment_failed' => [
+            'template' => 'emails.payment-failed',
+            'subject' => 'Payment Failed - {property_title}',
+            'enabled' => true,
+        ],
+        'refund_processed' => [
+            'template' => 'emails.refund-processed',
+            'subject' => 'Refund Processed - {currency} {refund_amount} for {property_title}',
+            'enabled' => true,
+        ],
     ],
 
     // Batch processing settings

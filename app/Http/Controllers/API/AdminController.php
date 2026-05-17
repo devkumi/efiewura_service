@@ -10,6 +10,7 @@ use App\Models\Property;
 use App\Models\PropertyCategory;
 use App\Models\Booking;
 use App\Models\Notification;
+use App\Models\Payment;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -1853,6 +1854,242 @@ class AdminController extends BaseController
                 'success' => false,
                 'message' => 'Error restoring notification',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Paginated transaction list with filters.
+     */
+    public function transactionReport(Request $request): JsonResponse
+    {
+        try {
+            $query = Payment::with(['booking.property', 'user', 'landlord.user'])
+                ->orderBy('created_at', 'desc');
+
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->filled('type')) {
+                $query->where('type', $request->type);
+            }
+
+            if ($request->filled('date_from')) {
+                $query->where('created_at', '>=', Carbon::parse($request->date_from)->startOfDay());
+            }
+
+            if ($request->filled('date_to')) {
+                $query->where('created_at', '<=', Carbon::parse($request->date_to)->endOfDay());
+            }
+
+            if ($request->filled('landlord_id')) {
+                $query->where('landlord_id', $request->landlord_id);
+            }
+
+            if ($request->filled('user_id')) {
+                $query->where('user_id', $request->user_id);
+            }
+
+            if ($request->filled('booking_id')) {
+                $query->where('booking_id', $request->booking_id);
+            }
+
+            $payments = $query->paginate($request->get('per_page', 20));
+
+            $totals = Payment::selectRaw('
+                SUM(status = "paid") as paid_count,
+                SUM(status = "pending") as pending_count,
+                SUM(status = "failed") as failed_count,
+                SUM(status = "refunded") as refunded_count,
+                SUM(amount * (status = "paid")) as total_collected,
+                SUM(refund_amount) as total_refunded
+            ')->first();
+
+            return response()->json([
+                'success' => true,
+                'data' => $payments->items(),
+                'meta' => [
+                    'total' => $payments->total(),
+                    'per_page' => $payments->perPage(),
+                    'current_page' => $payments->currentPage(),
+                    'last_page' => $payments->lastPage(),
+                ],
+                'summary' => [
+                    'paid' => (int) ($totals->paid_count ?? 0),
+                    'pending' => (int) ($totals->pending_count ?? 0),
+                    'failed' => (int) ($totals->failed_count ?? 0),
+                    'refunded' => (int) ($totals->refunded_count ?? 0),
+                    'total_collected' => (float) ($totals->total_collected ?? 0),
+                    'total_refunded' => (float) ($totals->total_refunded ?? 0),
+                    'net_revenue' => (float) (($totals->total_collected ?? 0) - ($totals->total_refunded ?? 0)),
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch transaction report',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Revenue summary with 12-month trend and type breakdown.
+     */
+    public function revenueReport(Request $request): JsonResponse
+    {
+        try {
+            $totals = Payment::paid()
+                ->selectRaw('
+                    SUM(amount) as total_collected,
+                    SUM(CASE WHEN type = "booking_payment" THEN amount ELSE 0 END) as booking_payments,
+                    SUM(CASE WHEN type = "rent_renewal" THEN amount ELSE 0 END) as rent_renewals,
+                    COUNT(*) as transaction_count
+                ')
+                ->first();
+
+            $totalRefunded = Payment::refunded()->sum('refund_amount');
+
+            // Monthly trend — last 12 months
+            $monthly = Payment::paid()
+                ->where('paid_at', '>=', now()->subMonths(12)->startOfMonth())
+                ->selectRaw("DATE_FORMAT(paid_at, '%Y-%m') as month, SUM(amount) as revenue, COUNT(*) as count")
+                ->groupBy('month')
+                ->orderBy('month', 'asc')
+                ->get();
+
+            // Fill in months with no data
+            $months = [];
+            for ($i = 11; $i >= 0; $i--) {
+                $months[] = now()->subMonths($i)->format('Y-m');
+            }
+
+            $monthlyMap = $monthly->keyBy('month');
+            $trend = array_map(fn($m) => [
+                'month' => $m,
+                'revenue' => (float) ($monthlyMap[$m]->revenue ?? 0),
+                'count' => (int) ($monthlyMap[$m]->count ?? 0),
+            ], $months);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total_collected' => (float) ($totals->total_collected ?? 0),
+                    'total_refunded' => (float) $totalRefunded,
+                    'net_revenue' => (float) (($totals->total_collected ?? 0) - $totalRefunded),
+                    'transaction_count' => (int) ($totals->transaction_count ?? 0),
+                    'by_type' => [
+                        'booking_payments' => (float) ($totals->booking_payments ?? 0),
+                        'rent_renewals' => (float) ($totals->rent_renewals ?? 0),
+                    ],
+                    'monthly_trend' => $trend,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch revenue report',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Revenue breakdown for a specific landlord.
+     */
+    public function landlordRevenueReport(Request $request, Landlord $landlord): JsonResponse
+    {
+        try {
+            $totals = Payment::where('landlord_id', $landlord->id)
+                ->paid()
+                ->selectRaw('SUM(amount) as total, COUNT(*) as count')
+                ->first();
+
+            $refunded = Payment::where('landlord_id', $landlord->id)
+                ->refunded()
+                ->sum('refund_amount');
+
+            $monthly = Payment::where('landlord_id', $landlord->id)
+                ->paid()
+                ->where('paid_at', '>=', now()->subMonths(12)->startOfMonth())
+                ->selectRaw("DATE_FORMAT(paid_at, '%Y-%m') as month, SUM(amount) as revenue, COUNT(*) as count")
+                ->groupBy('month')
+                ->orderBy('month', 'asc')
+                ->get();
+
+            $activeBookings = Booking::where('landlord_id', $landlord->id)
+                ->confirmed()
+                ->notDeleted()
+                ->count();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'landlord' => $landlord->load('user'),
+                    'total_received' => (float) ($totals->total ?? 0),
+                    'total_refunded' => (float) $refunded,
+                    'net_revenue' => (float) (($totals->total ?? 0) - $refunded),
+                    'transaction_count' => (int) ($totals->count ?? 0),
+                    'active_bookings' => $activeBookings,
+                    'monthly_trend' => $monthly,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch landlord revenue report',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Full payment history for a specific tenant (admin view).
+     */
+    public function tenantPaymentHistory(Request $request, User $user): JsonResponse
+    {
+        try {
+            $payments = Payment::where('user_id', $user->id)
+                ->with(['booking.property', 'landlord.user'])
+                ->orderBy('created_at', 'desc')
+                ->paginate($request->get('per_page', 20));
+
+            $totals = Payment::where('user_id', $user->id)
+                ->selectRaw('
+                    SUM(status = "paid") as paid_count,
+                    SUM(amount * (status = "paid")) as total_paid,
+                    SUM(status = "refunded") as refunded_count,
+                    SUM(refund_amount) as total_refunded
+                ')
+                ->first();
+
+            return response()->json([
+                'success' => true,
+                'data' => $payments->items(),
+                'meta' => [
+                    'total' => $payments->total(),
+                    'per_page' => $payments->perPage(),
+                    'current_page' => $payments->currentPage(),
+                    'last_page' => $payments->lastPage(),
+                ],
+                'summary' => [
+                    'user' => $user->only(['id', 'name', 'email']),
+                    'paid_transactions' => (int) ($totals->paid_count ?? 0),
+                    'total_paid' => (float) ($totals->total_paid ?? 0),
+                    'refunded_transactions' => (int) ($totals->refunded_count ?? 0),
+                    'total_refunded' => (float) ($totals->total_refunded ?? 0),
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch tenant payment history',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

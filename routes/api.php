@@ -9,6 +9,10 @@ use App\Http\Controllers\API\NotificationController;
 use App\Http\Controllers\API\AdminController;
 use App\Http\Controllers\API\AdminSettingsController;
 use App\Http\Controllers\API\TwoFactorController;
+use App\Http\Controllers\API\PaymentController;
+
+// Paystack webhook — must be outside auth:sanctum, signature-verified in controller
+Route::post('/payments/webhook', [PaymentController::class, 'webhook']);
 
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
@@ -37,6 +41,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-bookings', [BookingController::class, 'myBookings']);
     Route::get('/bookings/{booking}', [BookingController::class, 'show']);
     Route::patch('/bookings/{booking}/cancel', [BookingController::class, 'cancel']);
+    Route::post('/bookings/{booking}/pay-rent', [PaymentController::class, 'payRent']);
+
+    // Payment routes (tenant)
+    Route::post('/payments/verify', [PaymentController::class, 'verify']);
+    Route::get('/payments/{payment}', [PaymentController::class, 'show']);
+    Route::get('/my-payments', [PaymentController::class, 'myPayments']);
     
     // Notification routes
     Route::get('/notifications', [NotificationController::class, 'index']);
@@ -127,6 +137,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/overview', [TwoFactorController::class, 'adminOverview']);
         });
 
+        // Payment management
+        Route::post('/payments/{payment}/refund', [PaymentController::class, 'refund']);
+
+        // Transaction reporting
+        Route::get('/reports/transactions', [AdminController::class, 'transactionReport']);
+        Route::get('/reports/revenue', [AdminController::class, 'revenueReport']);
+        Route::get('/reports/landlord/{landlord}/revenue', [AdminController::class, 'landlordRevenueReport']);
+        Route::get('/reports/tenant/{user}/payments', [AdminController::class, 'tenantPaymentHistory']);
+
         // Admin Settings Management
         Route::prefix('settings')->group(function () {
             // Main settings endpoints
@@ -184,6 +203,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Landlord settings for auto-release
         Route::get('/settings', [App\Http\Controllers\API\LandlordController::class, 'getSettings']);
         Route::patch('/settings', [App\Http\Controllers\API\LandlordController::class, 'updateSettings']);
+
+        // Landlord payments
+        Route::get('/payments', [PaymentController::class, 'landlordPayments']);
     });
     
     // Tenant routes

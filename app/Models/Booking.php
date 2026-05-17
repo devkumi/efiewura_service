@@ -16,6 +16,9 @@ class Booking extends Model
         'user_id',
         'landlord_id',
         'status',
+        'payment_status',
+        'payment_initiated_at',
+        'payment_completed_at',
         'move_in_date',
         'move_out_date',
         'lease_duration_months',
@@ -50,6 +53,8 @@ class Booking extends Model
         'confirmed_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'payment_initiated_at' => 'datetime',
+        'payment_completed_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
 
@@ -75,6 +80,16 @@ class Booking extends Model
         return $this->belongsTo(Landlord::class);
     }
 
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    public function latestPayment()
+    {
+        return $this->hasOne(Payment::class)->latestOfMany();
+    }
+
     // Scopes
     public function scopePending($query)
     {
@@ -89,6 +104,16 @@ class Booking extends Model
     public function scopeActive($query)
     {
         return $query->whereIn('status', ['pending', 'confirmed'])->notDeleted();
+    }
+
+    public function scopePaid($query)
+    {
+        return $query->where('payment_status', 'paid');
+    }
+
+    public function scopeUnpaid($query)
+    {
+        return $query->where('payment_status', 'unpaid');
     }
 
     // Accessors

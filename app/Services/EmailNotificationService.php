@@ -66,7 +66,16 @@ class EmailNotificationService
                     
                 case 'property_auto_released':
                     return $this->sendPropertyAutoReleasedEmail($user, $notification, $emailData);
-                    
+
+                case 'payment_received':
+                    return $this->sendPaymentReceivedEmail($user, $notification, $emailData);
+
+                case 'payment_failed':
+                    return $this->sendPaymentFailedEmail($user, $notification, $emailData);
+
+                case 'refund_processed':
+                    return $this->sendRefundProcessedEmail($user, $notification, $emailData);
+
                 default:
                     Log::warning("Unknown notification type: {$notification->type}");
                     return false;
@@ -384,6 +393,79 @@ class EmailNotificationService
             
         } catch (Exception $e) {
             Log::error("Failed to send property auto-released email: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send payment received email
+     */
+    private function sendPaymentReceivedEmail(User $user, Notification $notification, array $data): bool
+    {
+        try {
+            $propertyTitle = $data['property']->title ?? 'Property';
+            $amount = $notification->data['amount'] ?? 0;
+            $currency = $notification->data['currency'] ?? 'GHS';
+
+            Mail::send('emails.payment-received', $data, function ($message) use ($user, $propertyTitle, $amount, $currency) {
+                $message->to($user->email, $user->name)
+                       ->subject("Payment Confirmed - {$currency} " . number_format($amount, 2) . " for {$propertyTitle}")
+                       ->from(config('mail.from.address'), config('mail.from.name'));
+            });
+
+            $this->markEmailSent($notification);
+            return true;
+
+        } catch (Exception $e) {
+            Log::error("Failed to send payment received email: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send payment failed email
+     */
+    private function sendPaymentFailedEmail(User $user, Notification $notification, array $data): bool
+    {
+        try {
+            $propertyTitle = $data['property']->title ?? 'Property';
+
+            Mail::send('emails.payment-failed', $data, function ($message) use ($user, $propertyTitle) {
+                $message->to($user->email, $user->name)
+                       ->subject("Payment Failed - {$propertyTitle}")
+                       ->from(config('mail.from.address'), config('mail.from.name'));
+            });
+
+            $this->markEmailSent($notification);
+            return true;
+
+        } catch (Exception $e) {
+            Log::error("Failed to send payment failed email: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Send refund processed email
+     */
+    private function sendRefundProcessedEmail(User $user, Notification $notification, array $data): bool
+    {
+        try {
+            $propertyTitle = $data['property']->title ?? 'Property';
+            $refundAmount = $notification->data['refund_amount'] ?? 0;
+            $currency = $notification->data['currency'] ?? 'GHS';
+
+            Mail::send('emails.refund-processed', $data, function ($message) use ($user, $propertyTitle, $refundAmount, $currency) {
+                $message->to($user->email, $user->name)
+                       ->subject("Refund Processed - {$currency} " . number_format($refundAmount, 2) . " for {$propertyTitle}")
+                       ->from(config('mail.from.address'), config('mail.from.name'));
+            });
+
+            $this->markEmailSent($notification);
+            return true;
+
+        } catch (Exception $e) {
+            Log::error("Failed to send refund processed email: " . $e->getMessage());
             return false;
         }
     }

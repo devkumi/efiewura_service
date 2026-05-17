@@ -447,6 +447,74 @@ class Notification extends Model
         ]);
     }
 
+    public static function createPaymentReceived($booking, $payment)
+    {
+        return self::create([
+            'user_id' => $booking->user_id,
+            'type' => 'payment_received',
+            'title' => 'Payment Received',
+            'message' => "Your payment of {$booking->currency} " . number_format($payment->amount, 2) . " for {$booking->property->title} has been received successfully.",
+            'data' => [
+                'booking_id' => $booking->id,
+                'payment_id' => $payment->id,
+                'property_title' => $booking->property->title,
+                'amount' => $payment->amount,
+                'currency' => $booking->currency,
+                'payment_type' => $payment->type,
+                'reference' => $payment->paystack_reference,
+                'channel' => $payment->payment_channel,
+            ],
+            'property_id' => $booking->property_id,
+            'booking_id' => $booking->id,
+            'priority' => 'high',
+        ]);
+    }
+
+    public static function createPaymentFailed($booking, $payment)
+    {
+        return self::create([
+            'user_id' => $booking->user_id,
+            'type' => 'payment_failed',
+            'title' => 'Payment Failed',
+            'message' => "Your payment of {$booking->currency} " . number_format($payment->amount, 2) . " for {$booking->property->title} could not be processed. " . ($payment->failure_reason ? "Reason: {$payment->failure_reason}" : 'Please try again.'),
+            'data' => [
+                'booking_id' => $booking->id,
+                'payment_id' => $payment->id,
+                'property_title' => $booking->property->title,
+                'amount' => $payment->amount,
+                'currency' => $booking->currency,
+                'failure_reason' => $payment->failure_reason,
+                'reference' => $payment->paystack_reference,
+            ],
+            'property_id' => $booking->property_id,
+            'booking_id' => $booking->id,
+            'priority' => 'urgent',
+        ]);
+    }
+
+    public static function createRefundProcessed($booking, $payment)
+    {
+        return self::create([
+            'user_id' => $booking->user_id,
+            'type' => 'refund_processed',
+            'title' => 'Refund Processed',
+            'message' => "A refund of {$booking->currency} " . number_format($payment->refund_amount, 2) . " for {$booking->property->title} has been processed and will reflect in your account within 3-5 business days.",
+            'data' => [
+                'booking_id' => $booking->id,
+                'payment_id' => $payment->id,
+                'property_title' => $booking->property->title,
+                'original_amount' => $payment->amount,
+                'refund_amount' => $payment->refund_amount,
+                'currency' => $booking->currency,
+                'refund_reason' => $payment->refund_reason,
+                'refund_reference' => $payment->refund_reference,
+            ],
+            'property_id' => $booking->property_id,
+            'booking_id' => $booking->id,
+            'priority' => 'high',
+        ]);
+    }
+
     public static function createPropertyAutoReleased($booking, $daysPastDue, $recipientType)
     {
         $userId = $recipientType === 'tenant' ? $booking->user_id : $booking->landlord->user_id;
